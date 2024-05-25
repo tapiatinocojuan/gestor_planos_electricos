@@ -6,9 +6,12 @@ import utilidades
 import pickle
 import networkx as nx
 from collections import defaultdict
+from copy import deepcopy
 
 NORMAL = 0
 CONF_ESCALA = 1
+CREAR_RAMA = 2
+BUSCAR_CC = 3
 CREAR_HIJO = 1
 FACTOR_MARGEN_X_CURVAS = 1.2
 DIST_MIN = 0.1
@@ -33,7 +36,9 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.modo = 0
         self.cuadro_distancia = None
         self.agregar_elemento = None
-        self.trayectorias = None
+        self.trayectorias = defaultdict(list)
+        self.trayectorias_ver = defaultdict(lambda: True)
+        self.dict_objetos_x_circuito =  defaultdict(list)
         self.alimentadores = None
         self.dist = None
         self.objetos = []
@@ -134,16 +139,19 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         
         
         if self.trayectorias is not None:
-            for rama in self.trayectorias:
-                if rama.__selected__:
-                    dc.SetPen(wx.Pen("#FF0000"))
-                else:
-                    dc.SetPen(wx.Pen(rama.color))
-                x1, y1 = self.convert_2_pixels((rama.obj1.x/self.escala, rama.obj1.y/self.escala))
-                x2, y2 = self.convert_2_pixels((rama.obj2.x/self.escala, rama.obj2.y/self.escala))
-                xm, ym = self.convert_2_pixels((rama.punto_centro[0]/self.escala, rama.punto_centro[1]/self.escala))
-                dc.DrawLine(int(x1), int(y1), int(x2), int(y2))
-                dc.DrawText(f"{rama.dist:.2f}", int(xm), int(ym))
+            for circuito, ramas in self.trayectorias.items():
+                if not self.trayectorias_ver[circuito]:
+                    continue
+                for rama in ramas:
+                    if rama.__selected__:
+                        dc.SetPen(wx.Pen("#FF0000"))
+                    else:
+                        dc.SetPen(wx.Pen(rama.color))
+                    x1, y1 = self.convert_2_pixels((rama.obj1.x/self.escala, rama.obj1.y/self.escala))
+                    x2, y2 = self.convert_2_pixels((rama.obj2.x/self.escala, rama.obj2.y/self.escala))
+                    xm, ym = self.convert_2_pixels((rama.punto_centro[0]/self.escala, rama.punto_centro[1]/self.escala))
+                    dc.DrawLine(int(x1), int(y1), int(x2), int(y2))
+                    dc.DrawText(f"{rama.dist:.2f}", int(xm), int(ym))
 
         if self.modo == CONF_ESCALA:
             x_ref, y_ref = self.convert_2_pixels(
@@ -204,26 +212,48 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     obj.__selected__ = True
                     self.__data__ = obj
                     wx.CallAfter(self.m_panel2.Refresh)
-                    item = self.dict_tree.get(i, None)
+                    item = self.dict_tree.get(obj, None)
                     if item is not None:
                         wx.CallAfter(self.m_treeCtrl.EnsureVisible, item)
                         wx.CallAfter(self.SetItemBackgroundColour, item, self.dict_tree, self.m_treeCtrl)
                 else:
                     obj.__selected__ = False
-
-            for i, obj in enumerate(self.trayectorias):
-                dist = self.calc_dist((self.x, self.y), (obj.punto_centro[0], obj.punto_centro[1]))
-                if dist < DIST_MIN*3:
-                    self.update_data_ctrl(obj, self.m_dataViewListCtrl)
-                    obj.__selected__ = True
-                    self.__data__ = obj
-                    wx.CallAfter(self.m_panel2.Refresh)
-                    item = self.dict_ramas_tree.get(i, None)
-                    if item is not None:
-                        wx.CallAfter(self.m_treeCtrl_ramas.EnsureVisible, item)
-                        wx.CallAfter(self.SetItemBackgroundColour, item, self.dict_ramas_tree, self.m_treeCtrl_ramas)
-                else:
-                    obj.__selected__ = False
+            
+            i = 0
+            for circuito, ramas in self.trayectorias.items():
+                if not self.trayectorias_ver[circuito]:
+                    continue
+                for obj in ramas:
+                    dist = self.calc_dist((self.x, self.y), (obj.punto_centro[0], obj.punto_centro[1]))
+                    if dist < DIST_MIN*1.5:
+                        self.update_data_ctrl(obj, self.m_dataViewListCtrl)
+                        obj.__selected__ = True
+                        self.__data__ = obj
+                        wx.CallAfter(self.m_panel2.Refresh)
+                        item = self.dict_ramas_tree.get(self.__data__, None)
+                        if item is not None:
+                            wx.CallAfter(self.m_treeCtrl_ramas.EnsureVisible, item)
+                            wx.CallAfter(self.SetItemBackgroundColour, item, self.dict_ramas_tree, self.m_treeCtrl_ramas)
+                    else:
+                        obj.__selected__ = False
+                    i += 1
+        elif self.modo == CREAR_RAMA:
+            if not isinstance(self.__data__, utilidades.Accesorio):
+                self.modo=NORMAL
+                return
+            aux = None
+            for i, obj in enumerate(self.objetos):
+                dist = self.calc_dist((self.x, self.y), (obj.x, obj.y))
+                if dist < DIST_MIN:
+                    aux = obj
+            if aux is None:
+                return
+            self.trayectorias["personalizada"].append(
+                utilidades.Rama(self.__data__, aux)
+            )
+            self.modo = NORMAL
+            wx.CallAfter(self.m_panel2.Refresh)
+            wx.CallAfter(self.update_ramas_treectrl, None)
 
     def SetItemBackgroundColour(self, item, tree_ctrl_dict, tree_ctrl):
         for valor in tree_ctrl_dict.values():
@@ -243,7 +273,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.root = self.m_treeCtrl.AddRoot('Accesorios')
         for i, obj in enumerate(self.objetos):
             aux = self.m_treeCtrl.AppendItem(self.root,f"{i}-{obj.tipo}", data=obj)
-            self.dict_tree[i] = aux
+            self.dict_tree[obj] = aux
             for j, hijo in enumerate(obj.__hijos__):
                 self.m_treeCtrl.AppendItem(aux,f"{j}-{hijo.tipo}", data=hijo)
         self.m_treeCtrl.Expand(self.root)
@@ -252,7 +282,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.dict_tag_tree = {}
         self.m_treeCtrl_tags.DeleteAllItems()
         self.root_tags = self.m_treeCtrl_tags.AddRoot('Tags')
-        for i, (tag, valores) in enumerate(self.tags.items()):
+        for i, (tag, valores) in enumerate(sorted(self.tags.items())):
             tags_root = self.m_treeCtrl_tags.AppendItem(self.root_tags, tag, data=valores["lamparas"]+valores["controles"])
             controles_root = self.m_treeCtrl_tags.AppendItem(tags_root, "controles", data=valores["controles"])
             lamparas_root = self.m_treeCtrl_tags.AppendItem(tags_root, "lamparas", data=valores["lamparas"])
@@ -266,17 +296,25 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.dict_ramas_tree = {}
         self.m_treeCtrl_ramas.DeleteAllItems()
         self.root_ramas = self.m_treeCtrl_ramas.AddRoot('Ramas')
-        for i, rama in enumerate(self.trayectorias):
-            ramas_root = self.m_treeCtrl_ramas.AppendItem(self.root_ramas, str(i), data=rama)
-            self.dict_ramas_tree[i] = ramas_root
-            self.m_treeCtrl_ramas.AppendItem(ramas_root, f"{rama.obj1.tipo}", data=rama.obj1)
-            self.m_treeCtrl_ramas.AppendItem(ramas_root, f"{rama.obj2.tipo}", data=rama.obj2)
+        i = 0
+        for circuito, ramas in sorted(self.trayectorias.items()):
+            if len(ramas) == 0:
+                continue
+            ramas_root = self.m_treeCtrl_ramas.AppendItem(self.root_ramas, circuito, data=ramas)
+            for rama in ramas:
+                rama_root = self.m_treeCtrl_ramas.AppendItem(ramas_root, str(i), data=[rama])
+                self.dict_ramas_tree[rama] = rama_root
+                self.m_treeCtrl_ramas.AppendItem(rama_root, f"{rama.obj1.tipo}", data=[rama.obj1])
+                self.m_treeCtrl_ramas.AppendItem(rama_root, f"{rama.obj2.tipo}", data=[rama.obj2])
+                i += 1
         self.m_treeCtrl_ramas.Expand(self.root_ramas)
 
     def on_click(self, event):
         itemID = event.GetItem()
         tree_ctrl = event.EventObject
         data = tree_ctrl.GetItemData(itemID)
+        if data is None:
+            return
         self.update_data_ctrl(data, self.m_dataViewListCtrl)
         for obj in self.objetos:
             obj.__selected__ = False
@@ -288,6 +326,8 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         itemID = event.GetItem()
         tree_ctrl = event.EventObject
         data = tree_ctrl.GetItemData(itemID)
+        if data is None:
+            return
         if len(data) == 1:
             self.update_data_ctrl(data[0], self.m_dataViewListCtrl)
             self.__data__ = data[0]
@@ -296,23 +336,28 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         for obj in data:
             obj.__selected__ = True
             if obj.__padre__ is not None:
-                obj.__padre__.__selected__ = True 
+                obj.__padre__.__selected__ = True
         wx.CallAfter(self.m_panel2.Refresh)
 
     def on_click_ramas(self, event):
         itemID = event.GetItem()
         tree_ctrl = event.EventObject
         data = tree_ctrl.GetItemData(itemID)
-        self.update_data_ctrl(data, self.m_dataViewListCtrl)
-        self.__data__ = data
+        if data is None:
+            return
+        if len(data) == 1:
+            self.update_data_ctrl(data[0], self.m_dataViewListCtrl)
+            self.__data__ = data[0]
         for obj in self.objetos:
             obj.__selected__ = False
-        for obj in self.trayectorias:
-            obj.__selected__ = False
-        data.__selected__ = True   
-        if isinstance(data, utilidades.Rama):
-            data.obj1.__selected__ = True        
-            data.obj2.__selected__ = True        
+        for ramas in self.trayectorias.values():
+            for rama in ramas:
+                rama.__selected__ = False
+        for obj in data:
+            obj.__selected__ = True   
+            if isinstance(obj, utilidades.Rama):
+                obj.obj1.__selected__ = True        
+                obj.obj2.__selected__ = True        
         wx.CallAfter(self.m_panel2.Refresh)
 
     def update_data_ctrl(self, data, obj):
@@ -341,12 +386,15 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         data = tree_ctrl.GetItemData(itemID)
         self.PopupMenu(PopMenu2(self.m_treeCtrl, self, data))
 
+    def on_context_menu_treectrl_ramas(self, event):
+        itemID = event.GetItem()
+        tree_ctrl = event.EventObject
+        data = tree_ctrl.GetItemData(itemID)
+        text =  tree_ctrl.GetItemText(itemID)
+        self.PopupMenu(PopMenu3(self.m_treeCtrl, self, data, text=text))
+
     def on_save(self, event):
         data = {
-           #"img" : {
-           #     'pixels': self.img.GetData(),
-           #     'size': self.img.GetSize(),
-           # },
            "objetos" : self.objetos,
            "origen" : self.origen,
            "escala" : self.escala,
@@ -356,6 +404,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
            "y_abs": self.y_abs,
            "path": self.path,
            "circuitos_data": self.get_tabla_data(self.m_grid1),
+           "trayectorias": self.trayectorias["personalizada"],
         }
         dlg = wx.FileDialog(self, "Archivo de recuperacion",wildcard="*.pkl", style=wx.FD_SAVE)
         if dlg.ShowModal() == wx.ID_CANCEL:
@@ -386,15 +435,29 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.set_tabla_data(self.m_grid1, dict_pkld["circuitos_data"])
         self.img = wx.Image(self.path, wx.BITMAP_TYPE_ANY)
         self.ancho, self.alto = self.img.GetSize()
+        self.trayectorias.clear()
+        try:
+            self.trayectorias["personalizada"] = dict_pkld["trayectorias"]
+        except:
+            pass
         wx.CallAfter(self.m_panel2.Refresh)
         wx.CallAfter(self.update_treectrl, None)
+        wx.CallAfter(self.update_ramas_treectrl, None)
+        wx.CallAfter(self.update_tag_treectrl, None)
 
     def on_calc_carga(self, event):
-        carga = 0
+        carga_total = 0
+        data = []
+        self.on_asignar_circuito(None)
+        carga_aux = defaultdict(float)
         for obj in self.objetos:
-            carga += obj.potencia
-        self.m_textCtrl_carga.SetValue(f"{carga:.2f}")
-        return carga
+            carga_total += obj.potencia
+            carga_aux[obj.circuito] += obj.potencia
+        data = []
+        for circuito, carga in sorted(carga_aux.items()):
+            data.append((circuito, f"{carga:.2f}"))
+        self.set_tabla_data(self.m_grid2, sorted(data))
+        self.m_textCtrl_carga.SetValue(f"{carga_total:.2f}")
 
     def on_calc_centro_carga(self, event):
         
@@ -409,14 +472,9 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         )
         wx.CallAfter(self.m_panel2.Refresh)
 
-    def on_calc_distancias_minimas(self, event):
-        self.trayectorias = self.calcula_trayectorias_minimas()
-        distancia = 0
-        for rama in self.trayectorias:
-            distancia += rama.dist
-        self.m_textCtrl_distancia.SetValue(f"{distancia:.2f}")
-        wx.CallAfter(self.update_ramas_treectrl, None)
-        wx.CallAfter(self.m_panel2.Refresh)
+    def on_calc_distancias(self, event):
+        self.on_generar_arbol_actual(None)
+        self.m_textCtrl_distancia.SetValue(f"{self.network.size(weight="weight"):.2f}")
 
     def calcular_dist_obj(self, obj1, obj2):
         """Calcula la distancia entre dos objetos"""
@@ -427,64 +485,92 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         dist = self.calc_dist((obj1.x, obj1.y), (obj2.x, obj2.y))
         return (delta_z + dist) * FACTOR_MARGEN_X_CURVAS
     
-    def calcula_trayectorias_minimas(self):
-        """Calcula mediante teoria de grafos las uniones minimas para conectar todos los
-        puntos de la red domestica"""
-        flg = self.m_checkBox2.GetValue()
-        flg_2 = self.m_checkBox1.GetValue()
-        flg_3 = self.m_checkBox3.GetValue()
-        flg_4 = self.m_checkBox4.GetValue()
-        if flg:
-            dict_circuitos = {data[0]: data[1] for data in self.get_tabla_data(self.m_grid1)}
-        G = nx.Graph()
+    def on_ver_red(self, event):
+
+        flg_1 = self.m_checkBox1.GetValue()
+        dist_max_ll  = float(self.m_textCtrl10.GetValue())
+        dist_max_al  = float(self.m_textCtrl11.GetValue())
+        dist_max_cc  = float(self.m_textCtrl12.GetValue())
+        dist_max_ll2  = float(self.m_textCtrl13.GetValue())
+        self.trayectorias["red_propuesta"].clear()
         for i, obj1 in enumerate(self.objetos):
-            G.add_node(i)
-        for i, obj1 in enumerate(self.objetos):
-            for j, obj2 in enumerate(self.objetos[:i]):
-                if flg_2:
+            for obj2 in self.objetos[:i]:
+                if flg_1:
                     if obj1.tipo == "Placa de accesorios" and obj1.tipo==obj2.tipo:
                         continue
-                if flg:
-                    if dict_circuitos[obj1.espacio] != dict_circuitos[obj2.espacio]:
+                    if  "Placa de accesorios" in [obj1.tipo,obj2.tipo] and  "Lampara de pared" in [obj1.tipo,obj2.tipo]:
+                        continue
+                    if  "Placa de accesorios" in [obj1.tipo,obj2.tipo] and  "Centro de carga" in [obj1.tipo,obj2.tipo]:
                         continue
                 dist = self.calcular_dist_obj(obj1, obj2)
-                G.add_edge(i, j, weight=dist)
-
-        if flg_3:
-            alimentadores = self.on_calcular_alimentadores(None)
-            for i, j, _ in alimentadores:
-                G.add_edge(i, j, weight=0.01)
-        if flg_4:
-            controles = self.on_calcular_controles(None)
-            for i, j, _ in controles:
-                G.add_edge(i, j, weight=0.01)
-        T = nx.minimum_spanning_tree(G)
-        return [utilidades.Rama(self.objetos[i], self.objetos[j])  for i, j, _ in  sorted(T.edges(data=True))]
+                dist_max = dist_max_al
+                if (obj1.tipo in ["Lampara de techo", "Lampara de piso", "Lampara de pared"] 
+                        and obj2.tipo in ["Lampara de techo", "Lampara de piso", "Lampara de pared"]):
+                    if obj1.tag == obj2.tag:
+                        dist_max = dist_max_ll 
+                    else:
+                        dist_max = dist_max_ll2
+                elif "Centro de carga" in [obj1.tipo, obj2.tipo]:
+                        dist_max = dist_max_cc
+                if dist > dist_max:
+                    continue
+                self.trayectorias["red_propuesta"].append(utilidades.Rama(obj1, obj2))
+        wx.CallAfter(self.update_ramas_treectrl, None)
+        wx.CallAfter(self.m_panel2.Refresh)
     
-    def on_calcular_controles(self, event):
+    def on_verificar_controles(self, event):
         self.on_buscar_tags(None)
-        controles = []
+        self.on_generar_arbol_actual(None)
+        self.trayectorias["fails"].clear()    
+        #calculo de regresos entre foco y control
         for tag, data in self.tags.items():
-            G = nx.Graph()
-            for lampara in data["lamparas"]: 
-                idx = self.objetos.index(lampara)
-                G.add_node(idx)
-            for control in data["controles"]: 
-                idx = self.objetos.index(control.__padre__)
-                G.add_node(idx)
-            for i, obj1 in enumerate(data["lamparas"]):
-                idx1 = self.objetos.index(obj1)
-                for _, obj2 in enumerate(data["lamparas"][:i]):
-                    dist = self.calcular_dist_obj(obj1, obj2)
-                    idx2 = self.objetos.index(obj2)
-                    G.add_edge(idx1, idx2, weight=dist)
-                for control in data["controles"]:
-                    dist = self.calcular_dist_obj(control, obj1)
-                    idx2 = self.objetos.index(control.__padre__)
-                    G.add_edge(idx1, idx2, weight=dist)
-            T = nx.minimum_spanning_tree(G)
-            controles += sorted(T.edges(data=True))   
-        return controles   
+            rutas = []
+            for i, control in enumerate(data["controles"]):
+                H = self.create_node_network(None)
+                for lampara in data["lamparas"]:
+                    try:
+                        ruta = nx.shortest_path(self.network, source=control.__padre__, target=lampara, weight="weight")
+                    except:
+                        self.trayectorias["fails"].append(utilidades.Rama(control.__padre__, lampara)) 
+                        continue     
+                    for j, nodo in enumerate(ruta[:-1]):
+                        rama = utilidades.Rama(nodo, ruta[j+1])
+                        H.add_edge(nodo, ruta[j+1], weigth=rama.dist)
+                aux = []
+                for obj1, obj2 in H.edges():
+                    aux.append(utilidades.Rama(obj1, obj2))
+                rutas.append(( H.size("weight"), f"control:{tag}-{i}", aux))
+                self.trayectorias[f"control:{tag}-{i}"].clear()
+            try:
+                _, key, ramas = min(rutas)
+                self.trayectorias[key] += ramas
+            except:
+                pass
+            #calculo de regresos entre controles
+            if len(data["controles"]) > 1:
+                H = self.create_node_network(None)
+                for j,  control1 in enumerate(data["controles"]):
+                    for k, control2 in enumerate(data["controles"][:-j]):
+                        try:
+                            ruta = nx.shortest_path(self.network, source=control1.__padre__, target=control2.__padre__, weight="weight")
+                        except:
+                            self.trayectorias["fails"].append(utilidades.Rama(control.__padre__, lampara)) 
+                            continue  
+                        for l, nodo in enumerate(ruta[:-1]):
+                            rama = utilidades.Rama(nodo, ruta[l+1])
+                            H.add_edge(nodo, ruta[l+1], weigth=rama.dist)           
+                self.trayectorias[f"regresos:{tag}"].clear()
+                for obj1, obj2 in H.edges():
+                    rama = utilidades.Rama(obj1, obj2)
+                    self.trayectorias[f"regresos:{tag}"].append(rama)
+
+        wx.CallAfter(self.recalcular, None)
+
+    def create_node_network(self, event):
+        H = nx.Graph()
+        for obj in self.objetos:
+            H.add_node(obj)
+        return H  
        
     def encontrar_foco_mas_cercano(self, placa):
         aux = []
@@ -509,7 +595,10 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             return None
         tipo = type(getattr(self.__data__, field))
         setattr(self.__data__,field,tipo(new_value))
-
+        try:
+            self.__data__.__padre__.calc_pot()
+        except:
+            pass
         wx.CallAfter(self.m_panel2.Refresh)
         wx.CallAfter(self.update_treectrl, None)
         self.m_statusBar1.SetStatusText("Articulo modificado exitosamente")
@@ -529,8 +618,9 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
     
     def on_buscar_espacios(self, event):
         espacios = {obj.espacio for obj in self.objetos}
-        data = [[espacio, ""] for espacio in espacios]
-        self.set_tabla_data(self.m_grid1, data)
+        dat = {esp: cir for esp, cir in self.get_tabla_data(self.m_grid1)}
+        data = [[espacio, dat.get(espacio, "")] for espacio in espacios]
+        self.set_tabla_data(self.m_grid1, sorted(data))
 
     def clean_table_data(self, grid):
         """Borra la informacion de una tabla"""
@@ -553,7 +643,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         grid.Refresh()
     
     def get_tabla_data(self, grid):
-        """Obtiene la información de la tabla y la eentrega como una lista de listas"""
+        """Obtiene la información de la tabla y la entrega como una lista de listas"""
         num_rows = grid.GetNumberRows()
         num_cols = grid.GetNumberCols()
         data = []
@@ -564,32 +654,28 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             data.append(aux)
         return data
     
+    def on_asignar_circuito(self, event):
+        dict_circuitos = {data[0]: data[1] for data in self.get_tabla_data(self.m_grid1)}
+        for obj in self.objetos:
+            if obj.espacio == "":
+                continue
+            obj.set_circuito(dict_circuitos[obj.espacio])
+        
     def on_calcular_alimentadores(self, event):
         """Secciona los objetos por circuitos y despues calcula la distancia minima de
         uno de los accesorios del circuito al centro de carga"""
-        dict_circuitos = {data[0]: data[1] for data in self.get_tabla_data(self.m_grid1)}
-        dict_objetos = defaultdict(list)
-        for i,obj in enumerate(self.objetos):
-            if obj.espacio == "":
-                continue
-            dict_objetos[dict_circuitos[obj.espacio]].append((i, obj))
+        self.on_asignar_circuito(None)
         centros_carga = self.on_buscar_centros_carga(None)
-
-        resultados = defaultdict(list)
-        for circuito, objetos in dict_objetos.items():
+        aux = defaultdict(list)
+        for obj in self.objetos:
             for idx, centro_carga in centros_carga: 
-                aux = []           
-                for idy, obj in objetos:
-                    if obj.tipo == "Placa de accesorios":
-                        continue
-                    dist = self.calcular_dist_obj(centro_carga, obj)
-                    aux.append((idx, idy, dist))
-                resultados[circuito].append(min(aux, key= lambda x:x[-1]))
-        alimentadores = []
-        for clave in resultados.values():
-            alimentador = min(clave, key= lambda x:x[-1])
-            alimentadores.append((alimentador[0], alimentador[1], {"weight": alimentador[2]}))
-        return alimentadores
+                if obj.tipo == "Placa de accesorios":
+                    continue    
+                aux[obj.circuito].append(utilidades.Rama(centro_carga, obj))
+        self.trayectorias["alimentadores"].clear()
+        for clave in aux.values():
+            alimentador = min(clave, key= lambda x:x.dist)
+            self.trayectorias["alimentadores"].append(alimentador)
 
 
     def on_buscar_centros_carga(self, event):
@@ -602,9 +688,95 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             centros_carga.append((i, obj))
         return centros_carga
 
-        
+    def recalcular(self, event):
+        wx.CallAfter(self.on_buscar_tags, None)
+        wx.CallAfter(self.on_buscar_espacios, None)
+        wx.CallAfter(self.on_calc_carga, None)
+        wx.CallAfter(self.update_treectrl, None)
+        wx.CallAfter(self.update_tag_treectrl, None)
+        wx.CallAfter(self.update_ramas_treectrl, None)
+        wx.CallAfter(self.on_calc_distancias, None)
+        wx.CallAfter(self.m_panel2.Refresh)
 
-        
+    
+    def on_calcular_cables(self, event):  
+        self.dict_ramas = {}
+        self.path_min_a_cc = defaultdict(lambda: defaultdict(list))
+        self.on_generar_arbol_actual(None)
+        for _, centro_carga in self.on_buscar_centros_carga(None):
+            for llave, clave in nx.single_source_dijkstra_path(self.network, centro_carga).items():
+                self.path_min_a_cc[llave][centro_carga] = clave
+                
+    def compute_dist(self, rutas):
+        dist = 0
+        for i, ruta in enumerate(rutas[:-1]):
+            dist += utilidades.Rama(ruta, rutas[i+1]).dist
+        return dist
+
+    def on_generar_arbol_actual(self, event):
+        self.network = nx.Graph()
+        self.dict_ramas = {}
+        for obj in self.objetos:
+            self.network.add_node(obj)
+        for circuito, ramas in self.trayectorias.items():
+            if not self.trayectorias_ver[circuito]:
+                continue
+            for rama in ramas:
+                self.network.add_edge(rama.obj1, rama.obj2, weight=rama.dist)
+                self.dict_ramas[(rama.obj1, rama.obj2)] = rama
+                self.dict_ramas[(rama.obj2, rama.obj1)] = rama
+
+    def on_ver(self, event):
+        value  = not self.m_tool4.IsToggled()
+        for key in self.trayectorias.keys():
+            self.trayectorias_ver[key] = value
+        wx.CallAfter(self.recalcular, None)
+
+    def on_clean_trayectorias(self, event):
+        for llave in self.trayectorias.keys():
+            if llave == "personalizada":
+                continue
+            self.trayectorias[llave].clear()
+        wx.CallAfter(self.recalcular, None)
+
+    def on_propose_alimentacion(self, event):
+        self.on_calcular_cables(None)
+        H = self.create_node_network(None)
+        for obj in self.objetos:
+            aux = []
+            if obj.potencia <= 0 and obj.tipo=="Placa de accesorios":
+                continue
+            for llave, clave in self.path_min_a_cc[obj].items():
+                aux.append((self.compute_dist(clave), clave))
+            if len(aux)==0:
+                continue
+            ruta = min(aux)
+            for i, obj in enumerate(ruta[1][:-1]):
+                rama = utilidades.Rama(obj, ruta[1][i+1])
+                H.add_edge(obj, ruta[1][i+1], weight=rama.dist)
+            obj.set_cc(ruta[-1])
+        for obj1, obj2 in H.edges():
+            self.trayectorias["alimentaciones"].append(utilidades.Rama(obj1, obj2))
+
+
+        wx.CallAfter(self.recalcular, None)
+
+
+    def on_click_circuito(self, event):
+        obj = event.GetEventObject()
+        circuito = obj.GetCellValue(event.Row, 0)
+        for obj in self.objetos:
+            if obj.circuito == circuito:
+                obj.__selected__ = True
+            else:
+                obj.__selected__ = False
+        for ramas in self.trayectorias.values():
+            for rama in ramas:
+                rama.__selected__ = False
+        event.Skip()
+        wx.CallAfter(self.m_panel2.Refresh)
+    
+
 class PopMenu(wx.Menu):
     def __init__(self, parent, main_frame):
         super(PopMenu, self).__init__()
@@ -616,18 +788,29 @@ class PopMenu(wx.Menu):
         self.Append(popmenu2)
         popmenu3 = wx.MenuItem(self, wx.ID_ANY, 'Agregar equipo')
         self.Append(popmenu3)
+        popmenu5 = wx.MenuItem(self, wx.ID_ANY, 'Cancelar')
+        self.Append(popmenu5)
 
         self.Bind(wx.EVT_MENU, self.cambiar_origen, popmenu)
         self.Bind(wx.EVT_MENU, self.configurar_escala, popmenu2)
         self.Bind(wx.EVT_MENU, self.agregar_elemento, popmenu3)
+        if isinstance(self.main_frame.__data__, utilidades.Accesorio):
+            popmenu4 = wx.MenuItem(self, wx.ID_ANY, 'Agregar rama')
+            self.Append(popmenu4)
+            self.Bind(wx.EVT_MENU, self.agregar_rama, popmenu4)
+            popmenu6 = wx.MenuItem(self, wx.ID_ANY, 'Ruta a CC')
+            self.Append(popmenu6)
+            self.Bind(wx.EVT_MENU, self.ruta_a_cc, popmenu6)
+        self.Bind(wx.EVT_MENU, self.cancelar, popmenu5)
     
     def cambiar_origen(self, event):
         diff_x = self.main_frame.origen[0] - self.main_frame.x_abs
         diff_y = self.main_frame.origen[1] - self.main_frame.y_abs
         self.main_frame.origen = (self.main_frame.x_abs, self.main_frame.y_abs)
         for obj in self.main_frame.objetos:
-            obj.x += diff_x
-            obj.y += diff_y
+            obj.x += diff_x*self.main_frame.escala
+            obj.y += diff_y*self.main_frame.escala
+            obj.actualizar_coordenadas_hijos()
         self.main_frame.m_panel2.Refresh()
     
     def configurar_escala(self, event):
@@ -639,7 +822,38 @@ class PopMenu(wx.Menu):
             self.main_frame, self.main_frame.x, self.main_frame.y
         )
         self.main_frame.agregar_elemento.Show()
-
+    
+    def agregar_rama(self, event):
+        self.main_frame.modo = CREAR_RAMA
+    
+    def cancelar(self, event):
+        self.main_frame.modo = NORMAL
+    
+    def ruta_a_cc(self, event):
+        self.main_frame.on_calcular_cables(None)
+        if not isinstance(self.main_frame.__data__, utilidades.Accesorio):
+            return
+        for obj in self.main_frame.objetos:
+            obj.__selected__ = False
+        for ramas in self.main_frame.trayectorias.values():
+            for rama in ramas:
+                rama.__selected__ = False
+        aux = []
+        for llave, clave in self.main_frame.path_min_a_cc[self.main_frame.__data__].items():
+            aux.append((self.main_frame.compute_dist(clave), clave))
+        if len(aux)==0:
+            self.main_frame.m_statusBar1.SetStatusText("El nodo no se puede conectar a un centro de carga")
+            return None
+        ruta = min(aux)
+        dist = 0
+        for i, obj in enumerate(ruta[1][:-1]):
+            self.main_frame.dict_ramas[(obj, ruta[1][i+1])].__selected__ = True
+            dist += self.main_frame.dict_ramas[(obj, ruta[1][i+1])].dist
+            obj.__selected__ = True
+        ruta[1][-1].__selected__ = True
+        wx.CallAfter(self.main_frame.m_panel2.Refresh)
+            
+    
 class PopMenu2(wx.Menu):
     def __init__(self, parent, main_frame, data):
         super(PopMenu2, self).__init__()
@@ -649,12 +863,72 @@ class PopMenu2(wx.Menu):
         popmenu = wx.MenuItem(self, wx.ID_ANY, 'Agregar Hijo')
         self.Append(popmenu)
         self.Bind(wx.EVT_MENU, self.agregar_elemento, popmenu)
+        popmenu2 = wx.MenuItem(self, wx.ID_ANY, 'Borrar elemento')
+        self.Append(popmenu2)
+        self.Bind(wx.EVT_MENU, self.borrar_elemento, popmenu2)
     
     def agregar_elemento(self, event):
         self.main_frame.agregar_elemento = GestorElementos(
             self.main_frame, self.data.x, self.data.y, self.data.z, CREAR_HIJO, self.data
         )
         self.main_frame.agregar_elemento.Show()
+    
+    def borrar_elemento(self, event):
+        try:
+            idx = self.main_frame.objetos.index(self.data)
+            self.main_frame.objetos.pop(idx)
+        except:
+            idx = self.main_frame.objetos.index(self.data.__padre__)
+            self.main_frame.objetos[idx].eliminar_hijo(self.data)
+        wx.CallAfter(self.main_frame.recalcular, None)
+
+
+class PopMenu3(wx.Menu):
+    def __init__(self, parent, main_frame, data, text=None):
+        super(PopMenu3, self).__init__()
+        self.parent = parent
+        self.main_frame = main_frame
+        self.data = data
+        self.text = text
+        popmenu = wx.MenuItem(self, wx.ID_ANY, 'Borrar rama')
+        self.Append(popmenu)
+        self.Bind(wx.EVT_MENU, self.borrar_rama, popmenu)
+        try:
+            if self.text in self.main_frame.trayectorias:
+                if self.main_frame.trayectorias_ver[self.text]:
+                    texto = "No ver"
+                else:
+                    texto = "Ver"
+                popmenu2 = wx.MenuItem(self, wx.ID_ANY, texto)
+                self.Append(popmenu2)
+                self.Bind(
+                    wx.EVT_MENU, 
+                    (lambda evt, status= self.main_frame.trayectorias_ver[self.text]: 
+                        self.ver_circuito(evt, status)),
+                    popmenu2
+                )
+        except:
+            pass
+    
+    def ver_circuito(self, event, status):
+        self.main_frame.trayectorias_ver[self.text] = not status
+        wx.CallAfter(self.main_frame.m_panel2.Refresh)
+  
+    
+    def borrar_rama(self, event):
+        flg = False
+        for circuito, ramas in self.main_frame.trayectorias.items():
+            for i, rama in enumerate(ramas):
+                if rama == self.data[0]:
+                    flg= True
+                    break
+            if flg:
+                break    
+        if not flg:
+            return                
+        self.main_frame.trayectorias[circuito].pop(i)
+        wx.CallAfter(self.main_frame.m_panel2.Refresh)
+        wx.CallAfter(self.main_frame.update_ramas_treectrl, None)
 
 
 class CuadroDistancia(ejecutar_gestor.Distancia):
@@ -725,10 +999,7 @@ class GestorElementos(ejecutar_gestor.GestorElementos):
             self.data.calc_pot()
         else:
             self.main_frame.objetos.append(obj)
-        wx.CallAfter(self.main_frame.m_panel2.Refresh)
-        wx.CallAfter(self.main_frame.update_treectrl, None)
-        wx.CallAfter(self.main_frame.on_buscar_tags, None)
-        wx.CallAfter(self.main_frame.on_buscar_espacios, None)
+        wx.CallAfter(self.main_frame.recalcular, None)
         self.Close()
 
 def main():

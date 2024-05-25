@@ -56,6 +56,8 @@ class Accesorio():
         self.__hijos__ = []
         self.__selected__ = False
         self.__padre__ = None
+        self.circuito = ""
+        self.cc = None
 
     def calc_pot(self):
         self.potencia = 0
@@ -64,13 +66,31 @@ class Accesorio():
 
     def append_hijo(self, hijo):
         self.__hijos__.append(hijo)
+    
+    def eliminar_hijo(self, hijo):
+        for i, obj in enumerate(self.__hijos__):
+            if hijo == obj:
+                break
+        self.__hijos__.pop(i)
+    
+    def actualizar_coordenadas_hijos(self):
+        for hijo in self.__hijos__:
+            hijo.x = self.x
+            hijo.y = self.y
+            hijo.z = self.z
+    
+    def set_circuito(self, circuito):
+        self.circuito = circuito
+    
+    def set_cc(self, centro_carga):
+        self.cc = centro_carga
 
     def __str__(self):
         return f"{self.tipo}-{self.potencia}W"
     
 class Rama():
 
-    def __init__(self, accesorio1, accesorio2, color="#FFFFFF"):
+    def __init__(self, accesorio1, accesorio2, color="#0000FF"):
         self.obj1 = accesorio1
         self.obj2 = accesorio2
         self.dist = None
