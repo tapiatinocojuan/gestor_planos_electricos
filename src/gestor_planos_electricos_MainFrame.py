@@ -7,6 +7,7 @@ import pickle
 import networkx as nx
 from collections import defaultdict
 from copy import deepcopy
+from os import path 
 
 NORMAL = 0
 CONF_ESCALA = 1
@@ -14,7 +15,32 @@ CREAR_RAMA = 2
 BUSCAR_CC = 3
 CREAR_HIJO = 1
 FACTOR_MARGEN_X_CURVAS = 1.2
-DIST_MIN = 0.1
+DIST_MIN = 15 #Distancia en pixeles
+MONOFASICO = 0
+BIFASICO = 1
+TRIFASICO = 2
+TEMP_60 = 2
+TEMP_75 = 3
+TEMP_90 = 4
+
+CONDUCTORES = (
+    #mm2  AWG o kcmil   I@60   I@75   I@90
+    (2.08, 14, 15, 20, 25),
+    (3.31, 12, 20, 25, 30),
+    (5.26, 10, 30, 35, 40),
+    (8.37,  8, 40, 50, 55),
+    (13.3,  6, 55, 65, 75),
+    (21.2,  4, 70, 85, 95),
+    (26.7,  3, 85, 100, 115),
+    (33.6,  2, 95, 115, 130),
+    (42.4,  1, 110, 130, 145),
+)
+CALIBRES = [x[1] for x in CONDUCTORES]
+DICT_SECC_TRANS = {
+}
+for row in CONDUCTORES:
+    DICT_SECC_TRANS[row[1]] = row[0]
+
 
 # Implementing MainFrame
 class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
@@ -39,6 +65,9 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.trayectorias = defaultdict(list)
         self.trayectorias_ver = defaultdict(lambda: True)
         self.dict_objetos_x_circuito =  defaultdict(list)
+        self.dict_cc_x_circuito = defaultdict(str)
+        self.dict_awg_x_circuito = defaultdict(set)
+        self.dict_cargas = defaultdict(lambda: defaultdict(lambda:defaultdict(lambda: {"cantidad": 0, "carga": 0})))
         self.alimentadores = None
         self.dist = None
         self.objetos = []
@@ -50,6 +79,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.m_dataViewListCtrl.AppendTextColumn(
             "Valor", width=80, mode=wx.dataview.DATAVIEW_CELL_EDITABLE
         )
+        self.zoom = 1
 
         self.imgs = {
             1: wx.Image("img/Centro_de_carga.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
@@ -64,6 +94,9 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             11: wx.Image("img/Placa_accesorios1.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
             12: wx.Image("img/Placa_accesorios2.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
             13: wx.Image("img/Placa_accesorios3.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
+           111: wx.Image("img/Placa_accesorios1.png", wx.BITMAP_TYPE_ANY).Rotate90().ConvertToBitmap(),
+           112: wx.Image("img/Placa_accesorios2.png", wx.BITMAP_TYPE_ANY).Rotate90().ConvertToBitmap(),
+           113: wx.Image("img/Placa_accesorios3.png", wx.BITMAP_TYPE_ANY).Rotate90().ConvertToBitmap(),
         }
 
     def on_file_change(self, event):
@@ -78,13 +111,24 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
     def on_paint(self, event):
         """Metodo para dibujar sobre un panel"""
         if self.img is not None:
-            self.pintar(event.EventObject, self.img)
+            dc = wx.PaintDC(event.EventObject)
+            self.pintar(dc, self.img, event.EventObject)
         event.Skip()
-    
-    def pintar(self, panel, img):
-        """Redibuja una imagen sobre un panel"""
 
-        dc = wx.PaintDC(panel)
+    def on_save_img(self, event):
+        if self.img is not None:
+            panel = self.m_panel2
+            ancho, alto = panel.GetSize()
+            bmp = wx.Bitmap(ancho, alto)
+            dc = wx.MemoryDC ()
+            dc.SelectObject(bmp)
+            self.pintar(dc, self.img, panel) 
+            bmp.SaveFile (path.join(path.dirname(self.path), "image.bmp"), wx.BITMAP_TYPE_BMP)
+            event.Skip()
+    
+    def pintar(self, dc, img, panel):
+        """Redibuja una imagen sobre un panel"""
+        
         dc.Clear()
         dc.SetBackground(wx.Brush("WHITE"))
         ancho, alto = panel.GetSize()
@@ -120,19 +164,44 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     idx = utilidades.TIPOS[obj.tipo]
                     ancho, alto = self.imgs[idx].GetSize()
                     dc.DrawBitmap(self.imgs[idx], int(x - ancho*0.5), int(y - alto*0.5), True)
+                    dc.DrawText(obj.tag, int(x + ancho*0.5), int(y))
+                    dc.DrawText(obj.circuito, int(x + ancho*0.5), int(y-alto))
                 elif obj.tipo == "Placa de accesorios":
                     if len(obj.__hijos__)!= 0:
                         idx = 10 + len(obj.__hijos__)
                     else:
                         idx = 11
                     ancho_placa, alto_placa = self.imgs[idx].GetSize()
-                    dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5), int(y - alto_placa*0.5), True)
+                    try:
+                        if obj.girar:
+                            idx += 100
+                    except:
+                        pass
+                    try:
+                        if obj.girar:
+                            dc.DrawBitmap(self.imgs[idx], int(x - alto_placa*0.5), int(y - ancho_placa*0.5), True)
+                            dc.DrawText(obj.circuito, int(x - alto_placa*0.5), int(y-ancho_placa))
+                        else:
+                            dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5), int(y - alto_placa*0.5), True)
+                            dc.DrawText(obj.circuito, int(x + ancho_placa*0.5), int(y - alto_placa*0.5))
+                    except:
+                        dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5), int(y - alto_placa*0.5), True)
+                        dc.DrawText(obj.circuito, int(x + ancho_placa*0.5), int(y - alto_placa*0.5))
                     if len(obj.__hijos__) > 0:
                         step_ancho = ancho_placa/(len(obj.__hijos__)) 
                         for i, hijo in enumerate(obj.__hijos__):
                             idx = utilidades.TIPOS[hijo.tipo]
                             ancho, alto = self.imgs[idx].GetSize()
-                            dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5 + step_ancho*i), int(y - alto_placa*0.5), True)
+                            try:
+                                if obj.girar:
+                                    dc.DrawBitmap(self.imgs[idx], int(x - alto_placa*0.5), int(y - ancho_placa*0.5  + step_ancho*i), True)
+                                    dc.DrawText(hijo.tag, int(x + alto_placa*0.5), int(y - ancho_placa*0.5  + step_ancho*i))
+                                else:
+                                    dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5 + step_ancho*i), int(y - alto_placa*0.5), True)
+                                    dc.DrawText(hijo.tag, int(x  + step_ancho*i), int(y + alto_placa*0.5))
+                            except:
+                                dc.DrawBitmap(self.imgs[idx], int(x  + ancho_placa*0.5 + step_ancho*i), int(y - alto_placa*0.5), True)
+                                dc.DrawText(hijo.tag, int(x + ancho*0.5), int(y))
                 if obj.__selected__:
                     dc.SetBrush(wx.Brush("#FF0000"))   
                     dc.DrawCircle(int(x), int(y), 5)
@@ -151,7 +220,10 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     x2, y2 = self.convert_2_pixels((rama.obj2.x/self.escala, rama.obj2.y/self.escala))
                     xm, ym = self.convert_2_pixels((rama.punto_centro[0]/self.escala, rama.punto_centro[1]/self.escala))
                     dc.DrawLine(int(x1), int(y1), int(x2), int(y2))
-                    dc.DrawText(f"{rama.dist:.2f}", int(xm), int(ym))
+                    if circuito == "flujos":
+                        dc.DrawText(f"{sum(rama.dict_flujos.values()):.2f}", int(xm), int(ym))
+                    else:
+                        dc.DrawText(f"{rama.dist:.2f}", int(xm), int(ym))
 
         if self.modo == CONF_ESCALA:
             x_ref, y_ref = self.convert_2_pixels(
@@ -207,7 +279,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         elif self.modo == NORMAL:
             for i, obj in enumerate(self.objetos):
                 dist = self.calc_dist((self.x, self.y), (obj.x, obj.y))
-                if dist < DIST_MIN:
+                if dist < DIST_MIN*self.escala:
                     self.update_data_ctrl(obj, self.m_dataViewListCtrl)
                     obj.__selected__ = True
                     self.__data__ = obj
@@ -225,7 +297,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     continue
                 for obj in ramas:
                     dist = self.calc_dist((self.x, self.y), (obj.punto_centro[0], obj.punto_centro[1]))
-                    if dist < DIST_MIN*1.5:
+                    if dist < DIST_MIN*1.5*self.escala:
                         self.update_data_ctrl(obj, self.m_dataViewListCtrl)
                         obj.__selected__ = True
                         self.__data__ = obj
@@ -244,7 +316,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             aux = None
             for i, obj in enumerate(self.objetos):
                 dist = self.calc_dist((self.x, self.y), (obj.x, obj.y))
-                if dist < DIST_MIN:
+                if dist < DIST_MIN*self.escala:
                     aux = obj
             if aux is None:
                 return
@@ -405,6 +477,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
            "path": self.path,
            "circuitos_data": self.get_tabla_data(self.m_grid1),
            "trayectorias": self.trayectorias["personalizada"],
+           "cc_x_circuito": self.dict_cc_x_circuito,
         }
         dlg = wx.FileDialog(self, "Archivo de recuperacion",wildcard="*.pkl", style=wx.FD_SAVE)
         if dlg.ShowModal() == wx.ID_CANCEL:
@@ -440,24 +513,47 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             self.trayectorias["personalizada"] = dict_pkld["trayectorias"]
         except:
             pass
-        wx.CallAfter(self.m_panel2.Refresh)
-        wx.CallAfter(self.update_treectrl, None)
-        wx.CallAfter(self.update_ramas_treectrl, None)
-        wx.CallAfter(self.update_tag_treectrl, None)
+        try:
+            self.dict_cc_x_circuito = dict_pkld["cc_x_circuito"]
+        except:
+            pass
+        wx.CallAfter(self.recalcular, None)
 
     def on_calc_carga(self, event):
         carga_total = 0
         data = []
         self.on_asignar_circuito(None)
         carga_aux = defaultdict(float)
+        centros_carga =  [x[1].tag for x in self.on_buscar_centros_carga(None)]
         for obj in self.objetos:
             carga_total += obj.potencia
             carga_aux[obj.circuito] += obj.potencia
         data = []
         for circuito, carga in sorted(carga_aux.items()):
-            data.append((circuito, f"{carga:.2f}"))
+            eleccion = self.dict_cc_x_circuito.get(circuito, "")
+            corriente = carga/127
+            if len(self.dict_awg_x_circuito[circuito]) != 0:
+                awg = min(self.dict_awg_x_circuito[circuito])
+            else:
+                awg = ""
+            data.append(
+                (circuito, f"{carga:.2f}", 
+                    {"eleccion": eleccion if eleccion is not None else "", 
+                     "data": centros_carga},
+                    f"{corriente:.2f}",
+                    self.dimensionar_cable(corriente, TEMP_60),
+                    awg
+                )
+            )
         self.set_tabla_data(self.m_grid2, sorted(data))
         self.m_textCtrl_carga.SetValue(f"{carga_total:.2f}")
+        return carga_total
+    
+    def dimensionar_cable(self, corriente, temp_idx):
+        for row in CONDUCTORES:
+            if row[temp_idx] >= corriente:
+                return row[1]
+        return ""
 
     def on_calc_centro_carga(self, event):
         
@@ -523,6 +619,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.on_generar_arbol_actual(None)
         self.trayectorias["fails"].clear()    
         #calculo de regresos entre foco y control
+        flg = self.m_radioBox1.GetSelection() 
         for tag, data in self.tags.items():
             rutas = []
             for i, control in enumerate(data["controles"]):
@@ -539,11 +636,26 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                 aux = []
                 for obj1, obj2 in H.edges():
                     aux.append(utilidades.Rama(obj1, obj2))
-                rutas.append(( H.size("weight"), f"control:{tag}-{i}", aux))
+                rutas.append(( H.size("weigth"), f"control:{tag}-{i}", aux))
                 self.trayectorias[f"control:{tag}-{i}"].clear()
             try:
-                _, key, ramas = min(rutas)
+                if len(data["controles"]) == 1:
+                    _, key, ramas = min(rutas)
+                else:
+                    if flg == 0:
+                        _, key, ramas = min(rutas)
+                    else:
+                        flg2 = True
+                        for ruta in sorted(rutas):
+                            if not self.todos_nodos_mismo_circuito(ruta[-1]):
+                                flg2 = False
+                                _, key, ramas = ruta
+                                break
+                        if flg2:
+                            _, key, ramas = min(rutas)
                 self.trayectorias[key] += ramas
+
+                            
             except:
                 pass
             #calculo de regresos entre controles
@@ -565,6 +677,17 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     self.trayectorias[f"regresos:{tag}"].append(rama)
 
         wx.CallAfter(self.recalcular, None)
+
+    def todos_nodos_mismo_circuito(self, ruta):
+        circuitos = set()
+        for rama in ruta:
+            circuitos.add(rama.obj1.circuito)
+            circuitos.add(rama.obj2.circuito)
+        if "" in circuitos:
+            return None
+        return len(circuitos) == 1
+            
+
 
     def create_node_network(self, event):
         H = nx.Graph()
@@ -618,8 +741,8 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
     
     def on_buscar_espacios(self, event):
         espacios = {obj.espacio for obj in self.objetos}
-        dat = {esp: cir for esp, cir in self.get_tabla_data(self.m_grid1)}
-        data = [[espacio, dat.get(espacio, "")] for espacio in espacios]
+        dat = {esp: (cir, cc) for esp, cir, cc in self.get_tabla_data(self.m_grid1)}
+        data = [[espacio, dat.get(espacio, ["", ""])[0], dat.get(espacio, ["", ""])[1]] for espacio in espacios]
         self.set_tabla_data(self.m_grid1, sorted(data))
 
     def clean_table_data(self, grid):
@@ -627,6 +750,12 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         num_rows = grid.GetNumberRows()
         if num_rows != 0:
             grid.DeleteRows(numRows=num_rows)
+    
+    def clean_table_cols(self, grid):
+        """Borra las columnas de una tabla"""
+        num_cols = grid.GetNumberCols()
+        if num_cols != 0:
+            grid.DeleteCols(numCols=num_cols)
 
     def set_tabla_data(self, grid, data):
         """Borra la informacion de una tabla y la rellena con los valores en data"""
@@ -659,13 +788,17 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         for obj in self.objetos:
             if obj.espacio == "":
                 continue
-            obj.set_circuito(dict_circuitos[obj.espacio])
+            try:
+                obj.set_circuito(dict_circuitos[obj.espacio])
+            except:
+                pass
         
     def on_calcular_alimentadores(self, event):
         """Secciona los objetos por circuitos y despues calcula la distancia minima de
         uno de los accesorios del circuito al centro de carga"""
         self.on_asignar_circuito(None)
         centros_carga = self.on_buscar_centros_carga(None)
+        dist_max = float(self.m_textCtrl12.GetValue())
         aux = defaultdict(list)
         for obj in self.objetos:
             for idx, centro_carga in centros_carga: 
@@ -675,7 +808,10 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.trayectorias["alimentadores"].clear()
         for clave in aux.values():
             alimentador = min(clave, key= lambda x:x.dist)
+            if alimentador.dist > dist_max:
+                continue 
             self.trayectorias["alimentadores"].append(alimentador)
+        wx.CallAfter(self.recalcular, None)
 
 
     def on_buscar_centros_carga(self, event):
@@ -688,10 +824,11 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             centros_carga.append((i, obj))
         return centros_carga
 
-    def recalcular(self, event):
+    def recalcular(self, event, flg=True):
         wx.CallAfter(self.on_buscar_tags, None)
         wx.CallAfter(self.on_buscar_espacios, None)
-        wx.CallAfter(self.on_calc_carga, None)
+        if flg:
+            wx.CallAfter(self.on_calc_carga, None)
         wx.CallAfter(self.update_treectrl, None)
         wx.CallAfter(self.update_tag_treectrl, None)
         wx.CallAfter(self.update_ramas_treectrl, None)
@@ -744,24 +881,59 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         H = self.create_node_network(None)
         for obj in self.objetos:
             aux = []
-            if obj.potencia <= 0 and obj.tipo=="Placa de accesorios":
-                continue
+            #if obj.potencia <= 0:
+            #    continue
             for llave, clave in self.path_min_a_cc[obj].items():
                 aux.append((self.compute_dist(clave), clave))
             if len(aux)==0:
                 continue
             ruta = min(aux)
-            for i, obj in enumerate(ruta[1][:-1]):
-                rama = utilidades.Rama(obj, ruta[1][i+1])
-                H.add_edge(obj, ruta[1][i+1], weight=rama.dist)
-            obj.set_cc(ruta[-1])
+            for i, nodo in enumerate(ruta[1][:-1]):
+                rama = utilidades.Rama(nodo, ruta[1][i+1])
+                H.add_edge(nodo, ruta[1][i+1], weight=rama.dist)
+            obj.set_cc(ruta[1][0])
         for obj1, obj2 in H.edges():
             self.trayectorias["alimentaciones"].append(utilidades.Rama(obj1, obj2))
+        wx.CallAfter(self.recalcular, None, False)
 
+    def on_calcular_flujos(self, event):
+        self.on_generar_arbol_actual(None)
+        dict_ramas = {}
+        self.trayectorias["flujos"].clear()
+        self.trayectorias["fails_flujos"].clear()
+        ramas = []
+        for obj1, obj2 in self.network.edges():
+            rama = utilidades.Rama(obj1, obj2)
+            rama.dict_flujos = defaultdict(float)
+            dict_ramas[(obj1, obj2)] = rama
+            dict_ramas[(obj2, obj1)] = rama
+            ramas.append(rama)
+        for obj in self.objetos: 
+            if obj.tipo in ["Centro de carga", "Lampara de techo", "Lampara de piso", "Lampara de pared"]:
+                continue
+            if obj.potencia <= 0:
+                continue
+            try:
+                if obj.cc is None:
+                    continue
+            except:
+                continue
+            try:
+                ruta = nx.shortest_path(self.network, obj, obj.cc, weight="weight")
+            except:
+                self.trayectorias["fails_flujos"].append(utilidades.Rama(obj, obj.cc))
+                continue
+            for i, obj1 in enumerate(ruta[:-1]):
+                obj2 =  ruta[i+1]
+                rama = dict_ramas[(obj1, obj2)]
+                rama.dict_flujos[obj.circuito] += obj.potencia
+
+        for rama in ramas:
+            if len(rama.dict_flujos) != 0:
+                self.trayectorias["flujos"].append(rama)
 
         wx.CallAfter(self.recalcular, None)
-
-
+            
     def on_click_circuito(self, event):
         obj = event.GetEventObject()
         circuito = obj.GetCellValue(event.Row, 0)
@@ -773,10 +945,180 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         for ramas in self.trayectorias.values():
             for rama in ramas:
                 rama.__selected__ = False
+
+        for rama in self.trayectorias["flujos"]:
+            if rama.dict_flujos[circuito] != 0:
+                rama.__selected__ = True
+
         event.Skip()
         wx.CallAfter(self.m_panel2.Refresh)
-    
 
+    def on_calcular_cc_preferido(self, event):
+        potencia_base = 100
+        self.create_node_network(None)
+        dict_distancias = defaultdict(lambda: defaultdict(lambda: 0)) 
+        centros_carga = [x[1] for x in self.on_buscar_centros_carga(None)]
+        self.trayectorias["fails_carga"].clear()
+        for obj in self.objetos:
+            if obj.tipo == "Centro de carga":
+                continue
+            if obj.potencia <= 0:
+                continue
+            for cc in centros_carga:
+                try:
+                    dist = nx.shortest_path_length(self.network, obj, cc, weight="weight")
+                except:
+                    self.trayectorias["fails_carga"].append(utilidades.Rama(obj, cc))
+                    dist = 1000
+                dict_distancias[obj.espacio][cc] += dist*(obj.potencia/potencia_base)
+        
+        datos = {data[0]: data for data in self.get_tabla_data(self.m_grid1)}
+        for circuito, distancias in dict_distancias.items():
+            min_distancia = min(distancias.items(), key=lambda x:x[1])
+            datos[circuito][-1] = min_distancia[0].tag 
+
+        aux = []
+        for clave in datos.values():
+            aux.append(clave)
+        self.set_tabla_data(self.m_grid1, aux)
+
+    def update_ramas(self, event):
+        for ramas in self.trayectorias.values():
+            for rama in ramas:
+                rama.calcular_dist_obj()
+                rama.calcular_punto_centro()
+
+    def on_unselect(self, event):
+        for obj in self.objetos:
+            obj.__selected__ = False
+        for ramas in self.trayectorias.values():
+            for rama in ramas:
+                rama.__selected__ = False
+
+    def on_asignar_cc(self, event):
+        self.dict_cc_x_circuito.clear()
+        centros_carga = {x[1].tag: x[1] for x in self.on_buscar_centros_carga(None)}
+        data = {x[0]: centros_carga.get(x[2], None) for x in self.get_tabla_data(self.m_grid2)}
+        self.dict_cc_x_circuito.update(data)
+        for obj in self.objetos:
+            if obj.tipo == "Centro de carga":
+                continue
+            cc = data[obj.circuito]
+            if cc is None:
+                continue
+            obj.set_cc(cc)
+
+    def crear_dict_flujos(self, event):
+        for ramas in self.trayectorias.values():
+            for rama in ramas:
+                rama.dict_flujos = defaultdict(float)
+
+
+    def on_calcular_cableado(self, event):
+        self.on_calcular_flujos(None)
+        self.on_verificar_controles(None)
+        if (len(self.trayectorias["fails"]) != 0 
+                or len(self.trayectorias["fails_carga"]) != 0
+                or len(self.trayectorias["fails_flujos"]) != 0):
+            msg = "Error en la red: No se pudo conectar un control o un carga"
+            dlg = wx.MessageDialog(None, msg, "", wx.OK|wx.ICON_INFORMATION)
+            dlg.ShowModal()
+            dlg.Destroy()
+    
+    def on_cc_force_change(self, event):     
+        for circuito, carga, cc, i, awg, awg2 in self.get_tabla_data(self.m_grid2):
+            self.dict_cc_x_circuito[circuito] = cc
+
+    def on_cotizar_enmanguerado(self, event):
+        self.on_generar_arbol_actual(None)
+        num_trayectoria = len(self.network.edges)
+        tipos = ["Lampara de techo", "Lampara de piso", "Lampara de pared"]
+        num_registros = sum ([1 for x in self.objetos if x.tipo in tipos])
+        print (f"Instalación de ducto,000284,Servicio,30,{num_trayectoria},{num_trayectoria*30},0,Casa VM")
+        print (f"Instalación de caja de registro,000283,Servicio,10,{num_registros},{num_registros*10},0,Casa VM")
+
+    def on_mouse_wheel(self, event):
+        if not event.controlDown:
+            return
+        if  event.WheelRotation > 0:
+            self.zoom += 0.05
+        else:
+            self.zoom -= 0.05
+        #import pdb;pdb.set_trace()
+        
+        ancho, alto = self.m_scrolledWindow1.GetSize()
+        self.m_panel2.SetSize(wx.Size(int(ancho*self.zoom), int(alto*self.zoom)))
+        self.m_panel2.Refresh()
+
+
+    def on_calcular_cuadro_carga_x_cc(self, event):
+
+        self.dict_cargas.clear()
+        keys = set()
+        for obj in self.objetos:
+            if obj.tipo == "Placa de accesorios":
+                for hijo in obj.__hijos__:
+                    if hijo.potencia <= 0:
+                        continue
+                    key = f"{hijo.tipo}-{hijo.potencia}W"
+                    keys.add(key)
+                    self.dict_cargas[obj.cc.tag][obj.circuito][key]["cantidad"] += 1
+                    self.dict_cargas[obj.cc.tag][obj.circuito][key]["carga"] += hijo.potencia
+            elif obj.tipo == "Centro de carga":
+                continue
+            else:
+                key = f"{obj.tipo}-{obj.potencia}W"
+                keys.add(key)
+                self.dict_cargas[obj.cc.tag][obj.circuito][key]["cantidad"] += 1
+                self.dict_cargas[obj.cc.tag][obj.circuito][key]["carga"] += obj.potencia
+            
+        self.panel_cuadro_carga = CuadroCarga(self, self.m_radioBox2.GetSelection(), keys)
+        self.panel_cuadro_carga.Show()
+
+    
+    def on_caida_tension(self, event):
+        data = {x[0]: [float(x[3]), int(x[4])] for x in self.get_tabla_data(self.m_grid2)}
+        self.on_generar_arbol_actual(None)
+        for obj in self.objetos:
+            if obj.tipo == "Centro de carga":
+                continue
+            try:
+                dist = nx.shortest_path_length(self.network, obj, obj.cc, weight="weight")
+                if not isinstance(dist, float):
+                    import pdb; pdb.set_trace()
+            except:
+                print (obj.tipo)
+            e, awg = self.calcular_cable(dist, data[obj.circuito][0], 127, data[obj.circuito][1])
+            obj.set_e(e)
+            self.dict_awg_x_circuito[obj.circuito].add(awg)
+
+    def calcular_cable(self, distancia, corriente, voltaje, awg_inicial):
+        try:
+            e = (4*distancia*corriente)/(voltaje*DICT_SECC_TRANS[awg_inicial])
+        except:
+            import pdb
+            pdb.set_trace()
+        if e < 3:
+            return e, awg_inicial
+        awg = self.incrementar_seccion(awg_inicial)
+        return self.calcular_cable(distancia, corriente, voltaje, awg)
+        
+    def incrementar_seccion(self, awg):
+        idx = CALIBRES.index(awg)
+        return CALIBRES[idx + 1]
+
+
+
+
+
+
+
+
+
+
+         
+
+        
 class PopMenu(wx.Menu):
     def __init__(self, parent, main_frame):
         super(PopMenu, self).__init__()
@@ -798,9 +1140,23 @@ class PopMenu(wx.Menu):
             popmenu4 = wx.MenuItem(self, wx.ID_ANY, 'Agregar rama')
             self.Append(popmenu4)
             self.Bind(wx.EVT_MENU, self.agregar_rama, popmenu4)
-            popmenu6 = wx.MenuItem(self, wx.ID_ANY, 'Ruta a CC')
+            popmenu6 = wx.MenuItem(self, wx.ID_ANY, 'Ruta a CC (mas proximo)')
             self.Append(popmenu6)
             self.Bind(wx.EVT_MENU, self.ruta_a_cc, popmenu6)
+            popmenu7 = wx.MenuItem(self, wx.ID_ANY, 'Ruta a CC asignado')
+            self.Append(popmenu7)
+            self.Bind(wx.EVT_MENU, self.ruta_a_cc_2, popmenu7)
+            if self.main_frame.__data__.tipo == "Placa de accesorios":
+                popmenu8 = wx.MenuItem(self, wx.ID_ANY, 'Girar')
+                self.Append(popmenu8)
+                self.Bind(wx.EVT_MENU, self.on_girar_placa, popmenu8)
+                popmenu9 = wx.MenuItem(self, wx.ID_ANY, 'Agregar Hijo')
+                self.Append(popmenu9)
+                self.Bind(wx.EVT_MENU, self.agregar_hijo, popmenu9)
+        elif isinstance(self.main_frame.__data__, utilidades.Rama):
+            popmenu10 = wx.MenuItem(self, wx.ID_ANY, 'Borrar rama')
+            self.Append(popmenu10)
+            self.Bind(wx.EVT_MENU, self.borrar_rama, popmenu10)
         self.Bind(wx.EVT_MENU, self.cancelar, popmenu5)
     
     def cambiar_origen(self, event):
@@ -811,6 +1167,7 @@ class PopMenu(wx.Menu):
             obj.x += diff_x*self.main_frame.escala
             obj.y += diff_y*self.main_frame.escala
             obj.actualizar_coordenadas_hijos()
+        self.main_frame.update_ramas(None)
         self.main_frame.m_panel2.Refresh()
     
     def configurar_escala(self, event):
@@ -833,11 +1190,7 @@ class PopMenu(wx.Menu):
         self.main_frame.on_calcular_cables(None)
         if not isinstance(self.main_frame.__data__, utilidades.Accesorio):
             return
-        for obj in self.main_frame.objetos:
-            obj.__selected__ = False
-        for ramas in self.main_frame.trayectorias.values():
-            for rama in ramas:
-                rama.__selected__ = False
+        self.main_frame.on_unselect(None)
         aux = []
         for llave, clave in self.main_frame.path_min_a_cc[self.main_frame.__data__].items():
             aux.append((self.main_frame.compute_dist(clave), clave))
@@ -845,13 +1198,61 @@ class PopMenu(wx.Menu):
             self.main_frame.m_statusBar1.SetStatusText("El nodo no se puede conectar a un centro de carga")
             return None
         ruta = min(aux)
-        dist = 0
         for i, obj in enumerate(ruta[1][:-1]):
             self.main_frame.dict_ramas[(obj, ruta[1][i+1])].__selected__ = True
-            dist += self.main_frame.dict_ramas[(obj, ruta[1][i+1])].dist
             obj.__selected__ = True
         ruta[1][-1].__selected__ = True
         wx.CallAfter(self.main_frame.m_panel2.Refresh)
+
+    def ruta_a_cc_2(self, event):
+        if not isinstance(self.main_frame.__data__, utilidades.Accesorio):
+            return
+        if self.main_frame.__data__.cc is None:
+            return
+        self.main_frame.on_unselect(None)
+        self.main_frame.on_generar_arbol_actual(None)
+        try:
+            ruta = nx.shortest_path(
+                self.main_frame.network,
+                self.main_frame.__data__, 
+                self.main_frame.__data__.cc,
+                weight="weight"
+            )
+        except:
+            self.main_frame.m_statusBar1.SetStatusText("El nodo no se puede conectar a su centro de carga asignado")
+            return None
+        for i, obj in enumerate(ruta[:-1]):
+            self.main_frame.dict_ramas[(obj, ruta[i+1])].__selected__ = True
+            obj.__selected__ = True
+        ruta[-1].__selected__ = True
+        wx.CallAfter(self.main_frame.m_panel2.Refresh)
+    
+    def on_girar_placa(self, event):
+        try:
+            self.main_frame.__data__.girar = not self.main_frame.__data__.girar
+        except:
+            self.main_frame.__data__.girar = True
+    
+    def agregar_hijo(self, event):
+        self.main_frame.agregar_elemento = GestorElementos(
+            self.main_frame, self.main_frame.__data__.x, self.main_frame.__data__.y, self.main_frame.__data__.z, CREAR_HIJO, self.main_frame.__data__
+        )
+        self.main_frame.agregar_elemento.Show()
+
+    def borrar_rama(self, event):
+        flg = False
+        for circuito, ramas in self.main_frame.trayectorias.items():
+            for i, rama in enumerate(ramas):
+                if rama == self.main_frame.__data__:
+                    flg= True
+                    break
+            if flg:
+                break    
+        if not flg:
+            return                
+        self.main_frame.trayectorias[circuito].pop(i)
+        wx.CallAfter(self.main_frame.recalcular, None)
+
             
     
 class PopMenu2(wx.Menu):
@@ -907,6 +1308,9 @@ class PopMenu3(wx.Menu):
                         self.ver_circuito(evt, status)),
                     popmenu2
                 )
+                popmenu3 = wx.MenuItem(self, wx.ID_ANY, "Copiar a personalizada")
+                self.Append(popmenu3)
+                self.Bind(wx.EVT_MENU, self.copiar_a_personalizado, popmenu3)
         except:
             pass
     
@@ -930,6 +1334,9 @@ class PopMenu3(wx.Menu):
         wx.CallAfter(self.main_frame.m_panel2.Refresh)
         wx.CallAfter(self.main_frame.update_ramas_treectrl, None)
 
+    def copiar_a_personalizado(self, event):
+        self.main_frame.trayectorias["personalizada"] += self.main_frame.trayectorias[self.text]
+        wx.CallAfter(self.main_frame.recalcular, None)
 
 class CuadroDistancia(ejecutar_gestor.Distancia):
     def __init__( self, parent ):
@@ -946,6 +1353,8 @@ class CuadroDistancia(ejecutar_gestor.Distancia):
         for obj in self.main_frame.objetos:
             obj.x *= escala_ratio
             obj.y *= escala_ratio
+            obj.actualizar_coordenadas_hijos()
+        self.main_frame.update_ramas(None)
         self.Close()
 
 class GestorElementos(ejecutar_gestor.GestorElementos):
@@ -1001,6 +1410,59 @@ class GestorElementos(ejecutar_gestor.GestorElementos):
             self.main_frame.objetos.append(obj)
         wx.CallAfter(self.main_frame.recalcular, None)
         self.Close()
+
+class CuadroCarga(ejecutar_gestor.CuadroCarga):
+    def __init__( self, parent, modo, llaves):
+        ejecutar_gestor.CuadroCarga.__init__( self, parent)
+        self.main_frame = parent
+        self.modo = modo
+        self.llaves = llaves 
+
+        ccs = list(self.main_frame.dict_cargas.keys())
+        self.m_comboBox2.SetItems(ccs)
+        fases = ["A", "B", "C"]
+        encabezados = fases[:modo+1] + ["circuito"] + list(llaves) + ["total W"] + fases[:modo+1] + ["corriente"] + ["calibre cable"]
+        self.main_frame.clean_table_cols(self.m_grid3)
+        self.main_frame.clean_table_cols(self.m_grid5)
+        self.m_grid3.InsertCols(pos=0, numCols=len(encabezados), updateLabels=True)
+        self.m_grid5.InsertCols(pos=0, numCols=modo + 1, updateLabels=True)
+
+        for i, encabezado in enumerate(encabezados):
+            self.m_grid3.SetColLabelValue(i, encabezado)
+
+        for i, encabezado in enumerate(fases[:modo+1]):
+            self.m_grid5.SetColLabelValue(i, encabezado)
+
+        self.checkbox_columnas = range(self.modo + 1)
+        for col in self.checkbox_columnas:
+            attr = wx.grid.GridCellAttr()
+            attr.SetEditor(wx.grid.GridCellBoolEditor())
+            attr.SetRenderer(wx.grid.GridCellBoolRenderer())
+            self.m_grid3.SetColAttr(col,attr)
+
+    def on_combo_box(self, event):
+        cc = event.GetString()
+        data = []
+        for circuito, cargas in self.main_frame.dict_cargas[cc].items():
+            aux = []
+            for _ in range(self.modo + 1):
+                aux.append("")
+            aux.append(circuito)
+            total = 0
+            for llave in self.llaves:
+                aux.append(cargas[llave]["cantidad"])
+                total += cargas[llave]["carga"]
+            aux.append(total)
+            for _ in range(self.modo + 1):
+                aux.append("")
+            corriente = total/127
+            aux.append(corriente)
+            aux.append("")
+            data.append(aux)
+        self.main_frame.set_tabla_data(self.m_grid3, data)
+                
+
+
 
 def main():
     app = wx.App()

@@ -58,6 +58,8 @@ class Accesorio():
         self.__padre__ = None
         self.circuito = ""
         self.cc = None
+        self.dict_flujos = defaultdict(float)
+        self.girar = False
 
     def calc_pot(self):
         self.potencia = 0
@@ -84,9 +86,15 @@ class Accesorio():
     
     def set_cc(self, centro_carga):
         self.cc = centro_carga
+    
+    def set_e(self, e):
+        self.e = e
+    
+    def girar_acc(self):
+        self.girar = not self.girar
 
     def __str__(self):
-        return f"{self.tipo}-{self.potencia}W"
+        return f"{self.tag}"
     
 class Rama():
 
