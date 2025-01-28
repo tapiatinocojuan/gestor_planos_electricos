@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ###########################################################################
-## Python code generated with wxFormBuilder (version 4.0.0-0-g0efcecf)
+## Python code generated with wxFormBuilder (version 4.2.1-0-g80c4cb6)
 ## http://www.wxformbuilder.org/
 ##
 ## PLEASE DO *NOT* EDIT THIS FILE!
@@ -448,17 +448,19 @@ class MainFrame ( wx.Frame ):
 		self.Layout()
 		self.m_statusBar1 = self.CreateStatusBar( 1, wx.STB_SIZEGRIP, wx.ID_ANY )
 		self.m_toolBar2 = self.CreateToolBar( wx.TB_HORIZONTAL, wx.ID_ANY )
-		self.m_tool5 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/save.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, wx.EmptyString, wx.EmptyString, None )
+		self.m_tool5 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/save.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, u"Guardar", wx.EmptyString, None )
 
-		self.m_tool6 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/importar.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, wx.EmptyString, wx.EmptyString, None )
+		self.m_tool6 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/importar.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, u"Importar archivo pkl", wx.EmptyString, None )
 
-		self.m_tool3 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/actualizar.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, wx.EmptyString, wx.EmptyString, None )
+		self.m_tool3 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/actualizar.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, u"Refrescar interfaz", wx.EmptyString, None )
 
-		self.m_tool4 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/ojo.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_CHECK, wx.EmptyString, wx.EmptyString, None )
+		self.m_tool4 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/ojo.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_CHECK, u"Habilitar/Deshabilitar ramas", wx.EmptyString, None )
 
-		self.m_tool51 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/x.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, wx.EmptyString, wx.EmptyString, None )
+		self.m_tool51 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/x.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, u"Borrar ramas", wx.EmptyString, None )
 
-		self.m_tool61 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/print.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, wx.EmptyString, wx.EmptyString, None )
+		self.m_tool61 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/print.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, u"Exportar captura", wx.EmptyString, None )
+
+		self.m_tool7 = self.m_toolBar2.AddTool( wx.ID_ANY, u"tool", wx.Bitmap( u"img/play.png", wx.BITMAP_TYPE_ANY ), wx.NullBitmap, wx.ITEM_NORMAL, u"Crear_reporte", wx.EmptyString, None )
 
 		self.m_toolBar2.Realize()
 
@@ -511,6 +513,7 @@ class MainFrame ( wx.Frame ):
 		self.Bind( wx.EVT_TOOL, self.on_ver, id = self.m_tool4.GetId() )
 		self.Bind( wx.EVT_TOOL, self.on_clean_trayectorias, id = self.m_tool51.GetId() )
 		self.Bind( wx.EVT_TOOL, self.on_save_img, id = self.m_tool61.GetId() )
+		self.Bind( wx.EVT_TOOL, self.on_crear_reporte, id = self.m_tool7.GetId() )
 		self.Bind( wx.EVT_MENU, self.on_cotizar_enmanguerado, id = self.m_menuItem1.GetId() )
 
 	def __del__( self ):
@@ -622,6 +625,9 @@ class MainFrame ( wx.Frame ):
 		event.Skip()
 
 	def on_save_img( self, event ):
+		event.Skip()
+
+	def on_crear_reporte( self, event ):
 		event.Skip()
 
 	def on_cotizar_enmanguerado( self, event ):

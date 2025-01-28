@@ -8,6 +8,9 @@ import networkx as nx
 from collections import defaultdict
 from copy import deepcopy
 from os import path 
+from tempfile import TemporaryDirectory
+from glob import glob
+from PIL import Image, ImageDraw, ImageFont
 
 NORMAL = 0
 CONF_ESCALA = 1
@@ -47,6 +50,8 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
     def __init__( self, parent ):
         ejecutar_gestor.MainFrame.__init__( self, parent )
         self.img = None
+        self.capture_name = "image.bmp"
+        self.bmp_file = None
         self.ancho = 0
         self.alto = 0
         self.escala = 1
@@ -123,9 +128,48 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             dc = wx.MemoryDC ()
             dc.SelectObject(bmp)
             self.pintar(dc, self.img, panel) 
-            bmp.SaveFile (path.join(path.dirname(self.path), "image.bmp"), wx.BITMAP_TYPE_BMP)
-            event.Skip()
+            if self.bmp_file is None:
+                bmp.SaveFile (path.join(path.dirname(self.path), self.capture_name), wx.BITMAP_TYPE_BMP)
+            else:
+                bmp.SaveFile (self.bmp_file, wx.BITMAP_TYPE_BMP)
+            if event is not None:
+                event.Skip()
     
+    def on_crear_reporte(self, event):
+        """Crea un reporte con la seccion de ramas"""
+        with TemporaryDirectory("temps") as temp_dir:
+            for main_key in self.trayectorias.keys():
+                self.m_statusBar1.SetStatusText(f"Exportando:{main_key}")
+                for key in self.trayectorias.keys():
+                    if main_key == key:
+                        self.trayectorias_ver[key] = True
+                    else:
+                        self.trayectorias_ver[key] = False
+                for obj in self.objetos:
+                    obj.__selected__ = False
+                for ramas in self.trayectorias.values():
+                    for rama in ramas:
+                        rama.__selected__ = False
+                for obj in self.trayectorias[main_key]:
+                    obj.__selected__ = True   
+                    if isinstance(obj, utilidades.Rama):
+                        obj.obj1.__selected__ = True        
+                        obj.obj2.__selected__ = True   
+                #self.recalcular(None)    
+                self.bmp_file = path.join(temp_dir, f"{main_key.replace(":", "@")}.bmp")
+                self.on_save_img(None)
+            self.m_statusBar1.SetStatusText(f"Creando reporte")
+            images = []
+            for file in glob(path.join(temp_dir, "*.bmp")):
+                img  = Image.open(file)
+                draw = ImageDraw.Draw(img)
+                font = ImageFont.truetype("Roboto-Regular.ttf", 20)
+                draw.text((100, 100),path.basename(file),(0,0,0), font=font)
+                images.append(img)
+            img = images.pop(0)
+            img.save(path.join(path.dirname(self.path), "reporte.pdf"), save_all=True, append_images=images)
+            self.m_statusBar1.SetStatusText(f"Reporte finalizado")
+
     def pintar(self, dc, img, panel):
         """Redibuja una imagen sobre un panel"""
         
@@ -1044,7 +1088,6 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             self.zoom += 0.05
         else:
             self.zoom -= 0.05
-        #import pdb;pdb.set_trace()
         
         ancho, alto = self.m_scrolledWindow1.GetSize()
         self.m_panel2.SetSize(wx.Size(int(ancho*self.zoom), int(alto*self.zoom)))
@@ -1084,8 +1127,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                 continue
             try:
                 dist = nx.shortest_path_length(self.network, obj, obj.cc, weight="weight")
-                if not isinstance(dist, float):
-                    import pdb; pdb.set_trace()
+                
             except:
                 print (obj.tipo)
             e, awg = self.calcular_cable(dist, data[obj.circuito][0], 127, data[obj.circuito][1])
@@ -1096,8 +1138,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         try:
             e = (4*distancia*corriente)/(voltaje*DICT_SECC_TRANS[awg_inicial])
         except:
-            import pdb
-            pdb.set_trace()
+            pass
         if e < 3:
             return e, awg_inicial
         awg = self.incrementar_seccion(awg_inicial)
