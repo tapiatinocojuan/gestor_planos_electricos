@@ -11,6 +11,7 @@ TIPOS = {
     8: "Lampara de techo",
     9: "Lampara de pared",
     10: "Lampara de piso",
+    14: "TV",
     "Centro de carga": 1,
     "Placa de accesorios" :2,
     "Contacto sencillo": 3,
@@ -20,7 +21,8 @@ TIPOS = {
     "Apagador 4 vias": 7,
     "Lampara de techo": 8,
     "Lampara de pared": 9,
-    "Lampara de piso": 10
+    "Lampara de piso": 10,
+    "TV": 14,
 }
 
 ALTURA_STD = defaultdict(lambda: 1.10)
@@ -28,9 +30,10 @@ ALTURA_STD[1] = 1.50
 ALTURA_STD[10] = 0
 ALTURA_STD[9] = 2
 ALTURA_STD[8] = 2.8
+ALTURA_STD[14] = 1.50
 
 POTENCIA_STD = defaultdict(lambda: 180)
-POTENCIA_STD[1] = 6000
+POTENCIA_STD[1] = 0
 POTENCIA_STD[2] = 0
 POTENCIA_STD[3] = 90
 POTENCIA_STD[4] = 180
@@ -40,6 +43,7 @@ POTENCIA_STD[7] = 0
 POTENCIA_STD[8] = 30
 POTENCIA_STD[9] = 30
 POTENCIA_STD[10] = 30
+POTENCIA_STD[14] = 0
 
 FACTOR_MARGEN_X_CURVAS = 1.2
 

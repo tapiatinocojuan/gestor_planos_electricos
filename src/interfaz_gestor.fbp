@@ -47,10 +47,10 @@
       <property name="hidden">0</property>
       <property name="id">wxID_ANY</property>
       <property name="maximum_size"></property>
-      <property name="minimum_size">957,862</property>
+      <property name="minimum_size">800,600</property>
       <property name="name">MainFrame</property>
       <property name="pos"></property>
-      <property name="size">1466,862</property>
+      <property name="size">1200,800</property>
       <property name="style">wxDEFAULT_FRAME_STYLE</property>
       <property name="subclass">; ; forward_declare</property>
       <property name="title"></property>
@@ -4269,7 +4269,7 @@
           <property name="tooltip">Borrar ramas</property>
           <event name="OnToolClicked">on_clean_trayectorias</event>
         </object>
-        <object class="tool" expanded="true">
+        <object class="tool" expanded="false">
           <property name="bitmap">Load From File; img/print.png</property>
           <property name="context_menu">0</property>
           <property name="id">wxID_ANY</property>
@@ -4281,7 +4281,7 @@
           <property name="tooltip">Exportar captura</property>
           <event name="OnToolClicked">on_save_img</event>
         </object>
-        <object class="tool" expanded="true">
+        <object class="tool" expanded="false">
           <property name="bitmap">Load From File; img/play.png</property>
           <property name="context_menu">0</property>
           <property name="id">wxID_ANY</property>
@@ -5043,7 +5043,7 @@
                 <property name="caption"></property>
                 <property name="caption_visible">1</property>
                 <property name="center_pane">0</property>
-                <property name="choices">&quot;Centro de carga&quot; &quot;Placa de accesorios&quot; &quot;Lampara de techo&quot; &quot;Lampara de piso&quot; &quot;Lampara de pared&quot; &quot;&quot;</property>
+                <property name="choices">&quot;Centro de carga&quot; &quot;Placa de accesorios&quot; &quot;Lampara de techo&quot; &quot;Lampara de piso&quot; &quot;Lampara de pared&quot; &quot;TV&quot;</property>
                 <property name="close_button">1</property>
                 <property name="context_help"></property>
                 <property name="context_menu">1</property>

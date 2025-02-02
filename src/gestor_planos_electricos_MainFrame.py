@@ -52,6 +52,10 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.img = None
         self.capture_name = "image.bmp"
         self.bmp_file = None
+        self.altura_accesorio_flg = False
+        self.circuito_accesorio_flg = True
+        self.tag_accesorio_flg = True
+        self.distancia_rama_flg = True
         self.ancho = 0
         self.alto = 0
         self.escala = 1
@@ -99,6 +103,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             11: wx.Image("img/Placa_accesorios1.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
             12: wx.Image("img/Placa_accesorios2.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
             13: wx.Image("img/Placa_accesorios3.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
+            14: wx.Image("img/TV.png", wx.BITMAP_TYPE_ANY).ConvertToBitmap(),
            111: wx.Image("img/Placa_accesorios1.png", wx.BITMAP_TYPE_ANY).Rotate90().ConvertToBitmap(),
            112: wx.Image("img/Placa_accesorios2.png", wx.BITMAP_TYPE_ANY).Rotate90().ConvertToBitmap(),
            113: wx.Image("img/Placa_accesorios3.png", wx.BITMAP_TYPE_ANY).Rotate90().ConvertToBitmap(),
@@ -134,10 +139,18 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                 bmp.SaveFile (self.bmp_file, wx.BITMAP_TYPE_BMP)
             if event is not None:
                 event.Skip()
+
+    def get_circuitos(self):
+        """Obtiene la lista de circuitos en el modelo"""
+        circuitos = set()
+        for obj in self.objetos:
+            circuitos.add(obj.circuito)
+        return circuitos
     
     def on_crear_reporte(self, event):
         """Crea un reporte con la seccion de ramas"""
         with TemporaryDirectory("temps") as temp_dir:
+            #Exportar grupos de ramas
             for main_key in self.trayectorias.keys():
                 self.m_statusBar1.SetStatusText(f"Exportando:{main_key}")
                 for key in self.trayectorias.keys():
@@ -154,17 +167,54 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     obj.__selected__ = True   
                     if isinstance(obj, utilidades.Rama):
                         obj.obj1.__selected__ = True        
-                        obj.obj2.__selected__ = True   
-                #self.recalcular(None)    
+                        obj.obj2.__selected__ = True      
                 self.bmp_file = path.join(temp_dir, f"{main_key.replace(":", "@")}.bmp")
                 self.on_save_img(None)
+            
+
+            for key in self.trayectorias_ver.keys():
+                self.trayectorias_ver[key] = False
+            self.trayectorias_ver["personalizada"] = True
+
+            #Exportar elementos por circuito
+            for circuito in sorted(list(self.get_circuitos())):
+                self.m_statusBar1.SetStatusText(f"Exportando circuito {circuito}")
+                for obj in self.objetos:
+                    if obj.circuito == circuito:
+                        obj.__selected__ = True
+                    else:
+                        obj.__selected__ = False
+                for ramas in self.trayectorias.values():
+                    for rama in ramas:
+                        rama.__selected__ = False  
+                self.bmp_file = path.join(temp_dir, f"circuito@{circuito}.bmp")
+                self.on_save_img(None)
+            
+            #Exportar altura de de placa de accesorios
+            self.m_statusBar1.SetStatusText(f"Exportando alturas")
+            self.tag_accesorio_flg = False
+            self.distancia_rama_flg = False
+            self.circuito_accesorio_flg = False
+            self.altura_accesorio_flg = True
+            for obj in self.objetos:
+                obj.__selected__ = False
+            for ramas in self.trayectorias.values():
+                for rama in ramas:
+                    rama.__selected__ = False
+            self.bmp_file = path.join(temp_dir, f"altura_accesorios.bmp")
+            self.on_save_img(None)
+            self.tag_accesorio_flg = True
+            self.distancia_rama_flg = True
+            self.circuito_accesorio_flg = True
+            self.altura_accesorio_flg = False
+
             self.m_statusBar1.SetStatusText(f"Creando reporte")
             images = []
-            for file in glob(path.join(temp_dir, "*.bmp")):
+            for file in sorted(glob(path.join(temp_dir, "*.bmp")), reverse=True):
                 img  = Image.open(file)
                 draw = ImageDraw.Draw(img)
                 font = ImageFont.truetype("Roboto-Regular.ttf", 20)
-                draw.text((100, 100),path.basename(file),(0,0,0), font=font)
+                draw.text((100, 100),path.basename(file).replace(".bmp", ""),(0,0,0), font=font)
                 images.append(img)
             img = images.pop(0)
             img.save(path.join(path.dirname(self.path), "reporte.pdf"), save_all=True, append_images=images)
@@ -204,18 +254,25 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                 )
             for obj in self.objetos:
                 x, y =self.convert_2_pixels((obj.x/self.escala, obj.y/self.escala))
-                if obj.tipo in ["Lampara de piso", "Lampara de techo", "Lampara de pared", "Centro de carga"]:
+                if obj.tipo in ["Lampara de piso", "Lampara de techo", "Lampara de pared", "Centro de carga", "TV"]:
                     idx = utilidades.TIPOS[obj.tipo]
                     ancho, alto = self.imgs[idx].GetSize()
                     dc.DrawBitmap(self.imgs[idx], int(x - ancho*0.5), int(y - alto*0.5), True)
-                    dc.DrawText(obj.tag, int(x + ancho*0.5), int(y))
-                    dc.DrawText(obj.circuito, int(x + ancho*0.5), int(y-alto))
+                    if self.tag_accesorio_flg:
+                        dc.DrawText(obj.tag, int(x + ancho*0.5), int(y))
+                    if self.circuito_accesorio_flg:
+                        dc.DrawText(obj.circuito, int(x + ancho*0.5), int(y-alto))
                 elif obj.tipo == "Placa de accesorios":
                     if len(obj.__hijos__)!= 0:
                         idx = 10 + len(obj.__hijos__)
                     else:
                         idx = 11
                     ancho_placa, alto_placa = self.imgs[idx].GetSize()
+                    if self.altura_accesorio_flg:
+                        if obj.girar:
+                            dc.DrawText(f"{obj.z}m", int(x + alto_placa*0.5), int(y))
+                        else:
+                            dc.DrawText(f"{obj.z}m", int(x), int(y + alto_placa*0.5))
                     try:
                         if obj.girar:
                             idx += 100
@@ -224,13 +281,16 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     try:
                         if obj.girar:
                             dc.DrawBitmap(self.imgs[idx], int(x - alto_placa*0.5), int(y - ancho_placa*0.5), True)
-                            dc.DrawText(obj.circuito, int(x - alto_placa*0.5), int(y-ancho_placa))
+                            if self.circuito_accesorio_flg:
+                                dc.DrawText(obj.circuito, int(x - alto_placa*0.5), int(y-ancho_placa))
                         else:
                             dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5), int(y - alto_placa*0.5), True)
-                            dc.DrawText(obj.circuito, int(x + ancho_placa*0.5), int(y - alto_placa*0.5))
+                            if self.circuito_accesorio_flg:
+                                dc.DrawText(obj.circuito, int(x + ancho_placa*0.5), int(y - alto_placa*0.5))
                     except:
                         dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5), int(y - alto_placa*0.5), True)
-                        dc.DrawText(obj.circuito, int(x + ancho_placa*0.5), int(y - alto_placa*0.5))
+                        if self.circuito_accesorio_flg:
+                            dc.DrawText(obj.circuito, int(x + ancho_placa*0.5), int(y - alto_placa*0.5))
                     if len(obj.__hijos__) > 0:
                         step_ancho = ancho_placa/(len(obj.__hijos__)) 
                         for i, hijo in enumerate(obj.__hijos__):
@@ -239,13 +299,16 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                             try:
                                 if obj.girar:
                                     dc.DrawBitmap(self.imgs[idx], int(x - alto_placa*0.5), int(y - ancho_placa*0.5  + step_ancho*i), True)
-                                    dc.DrawText(hijo.tag, int(x + alto_placa*0.5), int(y - ancho_placa*0.5  + step_ancho*i))
+                                    if self.tag_accesorio_flg:
+                                        dc.DrawText(hijo.tag, int(x + alto_placa*0.5), int(y - ancho_placa*0.5  + step_ancho*i))
                                 else:
                                     dc.DrawBitmap(self.imgs[idx], int(x - ancho_placa*0.5 + step_ancho*i), int(y - alto_placa*0.5), True)
-                                    dc.DrawText(hijo.tag, int(x  + step_ancho*i), int(y + alto_placa*0.5))
+                                    if self.tag_accesorio_flg:
+                                        dc.DrawText(hijo.tag, int(x  + step_ancho*i), int(y + alto_placa*0.5))
                             except:
                                 dc.DrawBitmap(self.imgs[idx], int(x  + ancho_placa*0.5 + step_ancho*i), int(y - alto_placa*0.5), True)
-                                dc.DrawText(hijo.tag, int(x + ancho*0.5), int(y))
+                                if self.tag_accesorio_flg:
+                                    dc.DrawText(hijo.tag, int(x + ancho*0.5), int(y))
                 if obj.__selected__:
                     dc.SetBrush(wx.Brush("#FF0000"))   
                     dc.DrawCircle(int(x), int(y), 5)
@@ -264,10 +327,11 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     x2, y2 = self.convert_2_pixels((rama.obj2.x/self.escala, rama.obj2.y/self.escala))
                     xm, ym = self.convert_2_pixels((rama.punto_centro[0]/self.escala, rama.punto_centro[1]/self.escala))
                     dc.DrawLine(int(x1), int(y1), int(x2), int(y2))
-                    if circuito == "flujos":
-                        dc.DrawText(f"{sum(rama.dict_flujos.values()):.2f}", int(xm), int(ym))
-                    else:
-                        dc.DrawText(f"{rama.dist:.2f}", int(xm), int(ym))
+                    if self.distancia_rama_flg:
+                        if circuito == "flujos":
+                            dc.DrawText(f"{sum(rama.dict_flujos.values()):.2f}", int(xm), int(ym))
+                        else:
+                            dc.DrawText(f"{rama.dist:.2f}", int(xm), int(ym))
 
         if self.modo == CONF_ESCALA:
             x_ref, y_ref = self.convert_2_pixels(
@@ -680,8 +744,8 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                 aux = []
                 for obj1, obj2 in H.edges():
                     aux.append(utilidades.Rama(obj1, obj2))
-                rutas.append(( H.size("weigth"), f"control:{tag}-{i}", aux))
-                self.trayectorias[f"control:{tag}-{i}"].clear()
+                rutas.append(( H.size("weigth"), f"{'{:>3}'.format(tag)}-{i}:control", aux))
+                self.trayectorias[f"{'{:>3}'.format(tag)}-{i}:control"].clear()
             try:
                 if len(data["controles"]) == 1:
                     _, key, ramas = min(rutas)
@@ -715,10 +779,10 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                         for l, nodo in enumerate(ruta[:-1]):
                             rama = utilidades.Rama(nodo, ruta[l+1])
                             H.add_edge(nodo, ruta[l+1], weigth=rama.dist)           
-                self.trayectorias[f"regresos:{tag}"].clear()
+                self.trayectorias[f"{'{:>3}'.format(tag)}:regresos"].clear()
                 for obj1, obj2 in H.edges():
                     rama = utilidades.Rama(obj1, obj2)
-                    self.trayectorias[f"regresos:{tag}"].append(rama)
+                    self.trayectorias[f"{'{:>3}'.format(tag)}:regresos"].append(rama)
 
         wx.CallAfter(self.recalcular, None)
 
@@ -1120,10 +1184,12 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
 
     
     def on_caida_tension(self, event):
+        self.m_statusBar1.SetStatusText("Inicia el estudio de caída de tensión")
+        self.on_calc_carga(None)
         data = {x[0]: [float(x[3]), int(x[4])] for x in self.get_tabla_data(self.m_grid2)}
         self.on_generar_arbol_actual(None)
         for obj in self.objetos:
-            if obj.tipo == "Centro de carga":
+            if obj.tipo in ["Centro de carga", "TV"]:
                 continue
             try:
                 dist = nx.shortest_path_length(self.network, obj, obj.cc, weight="weight")
@@ -1133,6 +1199,8 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             e, awg = self.calcular_cable(dist, data[obj.circuito][0], 127, data[obj.circuito][1])
             obj.set_e(e)
             self.dict_awg_x_circuito[obj.circuito].add(awg)
+        self.on_calc_carga(None)
+        self.m_statusBar1.SetStatusText("Termina el estudio de caída de tensión")
 
     def calcular_cable(self, distancia, corriente, voltaje, awg_inicial):
         try:

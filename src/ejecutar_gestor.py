@@ -19,9 +19,9 @@ import wx.grid
 class MainFrame ( wx.Frame ):
 
 	def __init__( self, parent ):
-		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.Size( 1466,862 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
+		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.Size( 1200,800 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
 
-		self.SetSizeHints( wx.Size( 957,862 ), wx.DefaultSize )
+		self.SetSizeHints( wx.Size( 800,600 ), wx.DefaultSize )
 
 		bSizer1 = wx.BoxSizer( wx.VERTICAL )
 
@@ -835,7 +835,7 @@ class GestorElementos ( wx.Frame ):
 
 		bSizer52 = wx.BoxSizer( wx.HORIZONTAL )
 
-		m_comboBox1Choices = [ u"Centro de carga", u"Placa de accesorios", u"Lampara de techo", u"Lampara de piso", u"Lampara de pared", wx.EmptyString ]
+		m_comboBox1Choices = [ u"Centro de carga", u"Placa de accesorios", u"Lampara de techo", u"Lampara de piso", u"Lampara de pared", u"TV" ]
 		self.m_comboBox1 = wx.ComboBox( self, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, m_comboBox1Choices, 0 )
 		bSizer52.Add( self.m_comboBox1, 0, wx.ALL, 5 )
 
