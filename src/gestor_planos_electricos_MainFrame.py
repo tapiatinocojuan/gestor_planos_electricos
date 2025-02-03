@@ -76,6 +76,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
         self.dict_objetos_x_circuito =  defaultdict(list)
         self.dict_cc_x_circuito = defaultdict(str)
         self.dict_awg_x_circuito = defaultdict(set)
+        self.dict_e_x_circuito = defaultdict(float)
         self.dict_cargas = defaultdict(lambda: defaultdict(lambda:defaultdict(lambda: {"cantidad": 0, "carga": 0})))
         self.alimentadores = None
         self.dist = None
@@ -1159,7 +1160,7 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
 
 
     def on_calcular_cuadro_carga_x_cc(self, event):
-
+        self.get_max_e()
         self.dict_cargas.clear()
         keys = set()
         for obj in self.objetos:
@@ -1171,14 +1172,13 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                     keys.add(key)
                     self.dict_cargas[obj.cc.tag][obj.circuito][key]["cantidad"] += 1
                     self.dict_cargas[obj.cc.tag][obj.circuito][key]["carga"] += hijo.potencia
-            elif obj.tipo == "Centro de carga":
+            elif obj.tipo in ["Centro de carga", "TV"]:
                 continue
             else:
                 key = f"{obj.tipo}-{obj.potencia}W"
                 keys.add(key)
                 self.dict_cargas[obj.cc.tag][obj.circuito][key]["cantidad"] += 1
                 self.dict_cargas[obj.cc.tag][obj.circuito][key]["carga"] += obj.potencia
-            
         self.panel_cuadro_carga = CuadroCarga(self, self.m_radioBox2.GetSelection(), keys)
         self.panel_cuadro_carga.Show()
 
@@ -1193,7 +1193,6 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
                 continue
             try:
                 dist = nx.shortest_path_length(self.network, obj, obj.cc, weight="weight")
-                
             except:
                 print (obj.tipo)
             e, awg = self.calcular_cable(dist, data[obj.circuito][0], 127, data[obj.circuito][1])
@@ -1201,6 +1200,18 @@ class gestor_planos_electricos_MainFrame( ejecutar_gestor.MainFrame ):
             self.dict_awg_x_circuito[obj.circuito].add(awg)
         self.on_calc_carga(None)
         self.m_statusBar1.SetStatusText("Termina el estudio de caída de tensión")
+    
+    def get_max_e(self):
+        """Obtiene la máxima caáda de tensión por circuito"""
+        self.on_caida_tension(None)
+        self.dict_e_x_circuito.clear()
+        for obj in self.objetos:
+            if obj.tipo in ["Centro de carga", "TV"]:
+                continue
+            if obj.e is None:
+                continue
+            if self.dict_e_x_circuito[obj.circuito] < obj.e:
+                 self.dict_e_x_circuito[obj.circuito] = obj.e 
 
     def calcular_cable(self, distancia, corriente, voltaje, awg_inicial):
         try:
@@ -1530,7 +1541,7 @@ class CuadroCarga(ejecutar_gestor.CuadroCarga):
         ccs = list(self.main_frame.dict_cargas.keys())
         self.m_comboBox2.SetItems(ccs)
         fases = ["A", "B", "C"]
-        encabezados = fases[:modo+1] + ["circuito"] + list(llaves) + ["total W"] + fases[:modo+1] + ["corriente"] + ["calibre cable"]
+        encabezados = fases[:modo+1] + ["circuito"] + list(llaves) + ["total W"] + fases[:modo+1] + ["corriente"] + ["caida tensión"] + ["calibre cable"] 
         self.main_frame.clean_table_cols(self.m_grid3)
         self.main_frame.clean_table_cols(self.m_grid5)
         self.m_grid3.InsertCols(pos=0, numCols=len(encabezados), updateLabels=True)
@@ -1566,7 +1577,8 @@ class CuadroCarga(ejecutar_gestor.CuadroCarga):
                 aux.append("")
             corriente = total/127
             aux.append(corriente)
-            aux.append("")
+            aux.append(self.main_frame.dict_e_x_circuito[circuito])
+            aux.append(min(self.main_frame.dict_awg_x_circuito[circuito]))
             data.append(aux)
         self.main_frame.set_tabla_data(self.m_grid3, data)
                 

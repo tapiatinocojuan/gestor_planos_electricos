@@ -1,4 +1,5 @@
 from collections import defaultdict
+import pickle
 
 TIPOS = {
     1: "Centro de carga",
@@ -56,6 +57,7 @@ class Accesorio():
         self.tipo = tipo
         self.potencia = potencia
         self.tag = tag
+        self.e = None
         self.espacio = espacio
         self.__hijos__ = []
         self.__selected__ = False
@@ -130,4 +132,30 @@ class Rama():
     def calc_dist(self, p1, p2):
         "Calcula la distancia entre 2 puntos"
         return ((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)**0.5
+    
+def change_pkl(file, new_file, key, value):
+        """Cambia un parametro en el archivo de recuperación"""
+        pathname = file
+        dict_file = open(pathname, 'rb')  
+        dict_pkld = pickle.load(dict_file)
+        dict_file.close()
+        data = {
+           "objetos" : dict_pkld["objetos"],
+           "origen" : dict_pkld["origen"],
+           "escala" : dict_pkld["escala"],
+           "escala_x": dict_pkld["escala_x"],
+           "escala_y": dict_pkld["escala_y"],
+           "x_abs": dict_pkld["x_abs"],
+           "y_abs": dict_pkld["y_abs"],
+           "path": dict_pkld["path"],
+           "circuitos_data": dict_pkld["circuitos_data"],
+           "trayectorias": dict_pkld["trayectorias"],
+           "cc_x_circuito": dict_pkld["cc_x_circuito"],
+        }
+
+        data[key] = value
+        pathname = new_file
+        dbfile = open(pathname, 'wb')     
+        pickle.dump(data, dbfile)                    
+        dbfile.close()
 
